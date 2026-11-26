@@ -28,6 +28,9 @@ type Facts struct {
 	// other project method declares with another return type is left out, so a call to it is never guessed.
 	Optional map[string]bool
 	Habits   *Habits // the project's own habits; code that breaks a strong one is reported
+	// Served maps each service of the repository (the folder holding its src/main/java) to the routes its
+	// controllers serve, so a Feign client's calls can be checked against the other side.
+	Served map[string][]Endpoint
 }
 
 // FactsOf gathers Facts from parsed files, usually every main Java file of the project.
@@ -44,7 +47,7 @@ func FactsOf(files []*File) *Facts {
 			}
 		}
 	}
-	facts := &Facts{Optional: map[string]bool{}, Habits: MineHabits(files)}
+	facts := &Facts{Optional: map[string]bool{}, Habits: MineHabits(files), Served: servedBy(files)}
 	for name, opt := range returns {
 		if opt {
 			facts.Optional[name] = true
@@ -66,6 +69,9 @@ func CheckWith(f *File, lines map[int]bool, facts *Facts) []Issue {
 	c.habitIssues(facts.Habits)
 	for _, t := range f.Types {
 		c.typeChecks(t)
+		if !c.test {
+			c.unservedCalls(t)
+		}
 	}
 	return c.out
 }
