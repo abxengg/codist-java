@@ -16,6 +16,11 @@ var checkCases = []struct {
 	} } }`, nil},
 	{"printStackTrace", `class A { void a() { try { x(); } catch (Exception e) { e.printStackTrace(); } } }`, []string{"print-stack-trace"}},
 	{"console", `class A { void a() { System.out.println("hi"); } }`, []string{"system-out"}},
+	// An error told to the user from a catch, in a file with no logger, is the program's only way to report it.
+	{"error report without a logger", `class A { void a() { try { x(); } catch (IOException e) { System.err.println("Could not save: " + e.getMessage()); } } }`, nil},
+	{"error report with a logger", `class A { static final Logger log = LoggerFactory.getLogger(A.class); void a() { try { x(); } catch (IOException e) { System.err.println("x"); } } }`, []string{"system-out"}},
+	{"stderr outside a catch", `class A { void a() { System.err.println("frame"); } }`, []string{"system-out"}},
+	{"stdout in a catch", `class A { void a() { try { x(); } catch (IOException e) { System.out.println("x"); } } }`, []string{"system-out"}},
 	{"optional get on find", `class A { Order a(long id) { return repo.findById(id).get(); } }`, []string{"optional-get"}},
 	{"jdbc client sql joined", `class A { List<E> a(String q) { return jdbc.sql(SELECT + " WHERE name LIKE '%" + q + "%'").query(this::row).list(); } }`, []string{"sql-concatenation"}},
 	{"jdbc client sql from constants", `class A { List<E> a() { return jdbc.sql(SELECT + " WHERE deleted_at IS NULL" + ORDER).query(this::row).list(); } }`, nil},

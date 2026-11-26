@@ -185,7 +185,7 @@ func (c *checker) call(n *ts.Node, sc scope) {
 		c.add(n, "print-stack-trace", "low", "printStackTrace() instead of the logger",
 			"It writes to standard error with no level, time or request context, so it is lost in production logs.",
 			`log.error("What failed and for which input", e);`)
-	case (obj == "System.out" || obj == "System.err") && strings.HasPrefix(name, "print") && !c.test:
+	case (obj == "System.out" || obj == "System.err") && strings.HasPrefix(name, "print") && !c.test && !c.reportsError(n, obj):
 		c.add(n, "system-out", "low", "Printing to the console instead of logging",
 			"Console output has no level and cannot be turned off or searched like log lines.",
 			"Use the class's logger.")
@@ -519,4 +519,14 @@ func (c *checker) inRetryLoop(n *ts.Node) bool {
 		}
 	}
 	return false
+}
+
+// hasLogger says the file has a logger to use instead of the console.
+var hasLogger = regexp.MustCompile(`\b(Logger|LoggerFactory|LogManager|Log)\b|@Slf4j|@Log4j2?\b|@CommonsLog|java\.util\.logging`)
+
+// reportsError says a print is a program telling its user about an error it caught, in a file with no logger: the
+// one way such a program has to say it. maze-lab's "Say when the high score cannot be saved" printed to System.err
+// in a catch that had been empty, and was flagged; a System.out trace left in drawing code is still reported.
+func (c *checker) reportsError(n *ts.Node, obj string) bool {
+	return obj == "System.err" && enclosing(n, "catch_clause") != nil && !hasLogger.Match(c.f.Src)
 }
