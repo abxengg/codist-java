@@ -5,8 +5,13 @@ parser, so no C compiler is needed, and finds:
 
 - **types and Spring facts**: classes, methods, fields, stereotypes (controller, service, repository, Feign client),
   REST routes, modules with their `spring.application.name` and port;
-- **code checks**: 15 exact rules such as an empty catch, `==` on strings, a shared `SimpleDateFormat`, or a
-  repository call inside a loop, each limited to changed lines when asked;
+- **code checks**: 20 exact rules such as an empty catch, `==` on strings, a shared `SimpleDateFormat`, or a
+  repository call inside a loop, plus checks for the project's own habits mined from its code, each limited to
+  changed lines when asked;
+- **calls between services** (`unserved-call`): a Feign client call to a route its service, found in the same
+  repository, does not serve (verb and path; a `{variable}` matches one segment), reported with the routes that
+  service serves. Services outside the repository are never reported. On a demo with 11 clients across 7 services it
+  reports nothing; on shop-lab it finds the client that calls `/payments/charges`;
 - **the class graph and call graph**: extends, implements, injects, uses, and Feign calls from a client to the
   controller that serves its route; method calls with confirmed or name-only receivers;
 - **cost hints**: loop depth, calls inside loops, and branching per method.
