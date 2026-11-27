@@ -21,6 +21,12 @@ var checkCases = []struct {
 	{"lock key named so", `class Jobs { boolean start(String id) { return redis.opsForValue().setIfAbsent("lock:" + id, "x"); } }`, []string{"lock-without-expiry"}},
 	{"lock with a timeout", `class SettlementLock { boolean acquire(String owner) { return Boolean.TRUE.equals(redis.opsForValue().setIfAbsent(KEY, owner, Duration.ofMinutes(30))); } }`, nil},
 	{"not a lock", `class Seen { boolean first(String id) { return redis.opsForValue().setIfAbsent("seen:" + id, "1"); } }`, nil},
+	// shop-lab, a prepared fix for "Coupon limit check removed": the UPDATE was changed to run as a query.
+	{"update run as a query", `class CouponRepository { boolean redeem(String code) { return jdbc.sql("UPDATE coupons SET used = used + 1 WHERE code = ? AND used < max_uses").param(code).query(Integer.class).optional().map(i -> i > 0).orElse(false); } }`, []string{"write-as-query"}},
+	{"update run as an update", `class CouponRepository { boolean redeem(String code) { return jdbc.sql("UPDATE coupons SET used = used + 1 WHERE code = ? AND used < max_uses").param(code).update() == 1; } }`, nil},
+	{"insert returning an id", `class A { long a(String n) { return jdbc.sql("INSERT INTO t (name) VALUES (?) RETURNING id").param(n).query(Long.class).single(); } }`, nil},
+	{"select as a query", `class A { List<E> a() { return jdbc.sql("SELECT * FROM t").query(E.class).list(); } }`, nil},
+	{"jdbc template delete as a query", `class A { void a(long id) { jdbcTemplate.queryForObject("DELETE FROM t WHERE id = ?", Integer.class, id); } }`, []string{"write-as-query"}},
 	// An error told to the user from a catch, in a file with no logger, is the program's only way to report it.
 	{"error report without a logger", `class A { void a() { try { x(); } catch (IOException e) { System.err.println("Could not save: " + e.getMessage()); } } }`, nil},
 	{"error report with a logger", `class A { static final Logger log = LoggerFactory.getLogger(A.class); void a() { try { x(); } catch (IOException e) { System.err.println("x"); } } }`, []string{"system-out"}},

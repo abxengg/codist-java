@@ -110,6 +110,9 @@ var (
 	secretName = regexp.MustCompile(`(?i)(password|passwd|secret|api_?key|token|credential)s?$`)
 	sqlMethods = map[string]bool{"createQuery": true, "createNativeQuery": true, "query": true, "queryForObject": true, "queryForList": true, "update": true, "execute": true, "executeQuery": true, "executeUpdate": true, "prepareStatement": true,
 		"sql": true, "queryForMap": true, "queryForRowSet": true, "queryForStream": true, "batchUpdate": true, "addBatch": true, "prepareCall": true} // sql: Spring's JdbcClient and R2DBC's DatabaseClient
+	queryMethods = map[string]bool{"query": true, "queryForObject": true, "queryForList": true, "queryForMap": true, "queryForRowSet": true, "queryForStream": true}
+	writeStmt    = regexp.MustCompile(`(?is)^\s*(update|insert|delete|merge)\b`)
+	returnsRows  = regexp.MustCompile(`(?i)\b(returning|output)\b`)
 	constantName = regexp.MustCompile(`^[A-Z][A-Z0-9_]*$`)
 	boxedTypes   = map[string]bool{"Long": true, "Integer": true, "Short": true, "Byte": true, "Double": true, "Float": true, "Character": true, "Boolean": true, "BigDecimal": true}
 	numberLit    = regexp.MustCompile(`^-?[0-9][0-9_]*(\.[0-9_]+)?[dDfF]?$`)
@@ -219,6 +222,11 @@ func (c *checker) call(n *ts.Node, sc scope) {
 			"Skip only the specific exceptions you expect, with a small skipLimit, and record skipped items with a SkipListener.")
 	case obj == "Duration" && (name == "ofMillis" || name == "ofSeconds") && args != nil && args.NamedChildCount() == 1:
 		c.durationUnit(n, name, args.NamedChild(0))
+	case queryMethods[name] && c.writeSQL(n, name, args):
+		c.add(n, "write-as-query", "high", "A statement that changes rows, run as a query",
+			name+"() expects the statement to return rows. An UPDATE, INSERT or DELETE without RETURNING returns none, so "+
+				"the database driver throws an error and the call fails every time it runs.",
+			"Run it with update(), which returns how many rows changed: .update() == 1.")
 	case sqlMethods[name] && args != nil && args.NamedChildCount() > 0:
 		if first := args.NamedChild(0); first.Type(lang) == "binary_expression" && strings.Contains(c.f.text(first), "+") && strings.Contains(c.f.text(first), `"`) {
 			if !allLiterals(c.f, first) {
@@ -558,4 +566,26 @@ func (c *checker) lockContext(n *ts.Node, args *ts.Node) bool {
 		}
 	}
 	return false
+}
+
+// writeSQL says whether a query call runs a statement that changes rows and returns none: the SQL is a string
+// literal, given to Spring's JdbcClient .sql(...) earlier in the chain, or to JdbcTemplate as the first argument.
+func (c *checker) writeSQL(n *ts.Node, name string, args *ts.Node) bool {
+	var lit *ts.Node
+	if args != nil && args.NamedChildCount() > 0 && name != "query" || args != nil && args.NamedChildCount() > 1 {
+		lit = args.NamedChild(0) // jdbcTemplate.query("UPDATE ...", mapper)
+	}
+	for o := field(n, "object"); lit == nil && o != nil && o.Type(lang) == "method_invocation"; o = field(o, "object") {
+		if c.f.text(field(o, "name")) == "sql" {
+			if a := field(o, "arguments"); a != nil && a.NamedChildCount() == 1 {
+				lit = a.NamedChild(0)
+			}
+			break
+		}
+	}
+	if lit == nil || lit.Type(lang) != "string_literal" {
+		return false
+	}
+	text := strings.Trim(c.f.text(lit), `"`)
+	return writeStmt.MatchString(text) && !returnsRows.MatchString(text)
 }
