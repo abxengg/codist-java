@@ -16,6 +16,11 @@ var checkCases = []struct {
 	} } }`, nil},
 	{"printStackTrace", `class A { void a() { try { x(); } catch (Exception e) { e.printStackTrace(); } } }`, []string{"print-stack-trace"}},
 	{"console", `class A { void a() { System.out.println("hi"); } }`, []string{"system-out"}},
+	// shop-lab "Hold the settlement lock until the run finishes": the timeout was taken away.
+	{"lock with no expiry", `class SettlementLock { boolean acquire(String owner) { return Boolean.TRUE.equals(redis.opsForValue().setIfAbsent(KEY, owner)); } }`, []string{"lock-without-expiry"}},
+	{"lock key named so", `class Jobs { boolean start(String id) { return redis.opsForValue().setIfAbsent("lock:" + id, "x"); } }`, []string{"lock-without-expiry"}},
+	{"lock with a timeout", `class SettlementLock { boolean acquire(String owner) { return Boolean.TRUE.equals(redis.opsForValue().setIfAbsent(KEY, owner, Duration.ofMinutes(30))); } }`, nil},
+	{"not a lock", `class Seen { boolean first(String id) { return redis.opsForValue().setIfAbsent("seen:" + id, "1"); } }`, nil},
 	// An error told to the user from a catch, in a file with no logger, is the program's only way to report it.
 	{"error report without a logger", `class A { void a() { try { x(); } catch (IOException e) { System.err.println("Could not save: " + e.getMessage()); } } }`, nil},
 	{"error report with a logger", `class A { static final Logger log = LoggerFactory.getLogger(A.class); void a() { try { x(); } catch (IOException e) { System.err.println("x"); } } }`, []string{"system-out"}},

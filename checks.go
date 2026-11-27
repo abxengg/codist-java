@@ -195,6 +195,11 @@ func (c *checker) call(n *ts.Node, sc scope) {
 		c.add(n, "system-out", "low", "Printing to the console instead of logging",
 			"Console output has no level and cannot be turned off or searched like log lines.",
 			"Use the class's logger.")
+	case name == "setIfAbsent" && args != nil && args.NamedChildCount() == 2 && strings.Contains(obj, "opsForValue") && c.lockContext(n, args):
+		c.add(n, "lock-without-expiry", "high", "A Redis lock set with no expiry",
+			"setIfAbsent(key, value) without a timeout keeps the key until something deletes it. If the holder crashes or "+
+				"is stopped before it releases the lock, the key stays for good and every later run finds it taken.",
+			"Give it a timeout longer than the work it guards: setIfAbsent(key, owner, Duration.ofMinutes(30)).")
 	case name == "get" && (args == nil || args.NamedChildCount() == 0) && c.optional(field(n, "object"), sc):
 		if method := enclosing(n, "method_declaration"); method == nil || !regexp.MustCompile(`\.(isPresent|isEmpty|ifPresent)\(`).MatchString(c.f.text(method)) {
 			c.add(n, "optional-get", "high", "Optional.get() without checking it has a value",
@@ -535,4 +540,22 @@ var hasLogger = regexp.MustCompile(`\b(Logger|LoggerFactory|LogManager|Log)\b|@S
 // in a catch that had been empty, and was flagged; a System.out trace left in drawing code is still reported.
 func (c *checker) reportsError(n *ts.Node, obj string) bool {
 	return obj == "System.err" && enclosing(n, "catch_clause") != nil && !hasLogger.Match(c.f.Src)
+}
+
+// lockContext says a call is taking a lock: the class, the method or the key it sets is named for one. A value set
+// once with setIfAbsent for another reason (a first-seen marker) may mean to last for ever.
+func (c *checker) lockContext(n *ts.Node, args *ts.Node) bool {
+	lock := func(s string) bool { return strings.Contains(strings.ToLower(s), "lock") }
+	if lock(c.f.text(args.NamedChild(0))) {
+		return true
+	}
+	if m := enclosing(n, "method_declaration"); m != nil && lock(c.f.text(field(m, "name"))) {
+		return true
+	}
+	for t := n.Parent(); t != nil; t = t.Parent() {
+		if k := t.Type(lang); k == "class_declaration" || k == "record_declaration" || k == "interface_declaration" {
+			return lock(c.f.text(field(t, "name")))
+		}
+	}
+	return false
 }
